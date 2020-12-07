@@ -1,5 +1,5 @@
 /**************************************************************************************************
-* CMTechHRMonitor.c: main application source file
+* CMTechPPG.c: main application source file
 **************************************************************************************************/
 
 /*********************************************************************
@@ -215,7 +215,7 @@ static void initIOPin()
   P2 = 0; 
   
   // I2C的SDA, SCL设置为GPIO, 输出低电平，否则功耗很大
-  HalI2CSetAsGPIO();
+  IIC_SetAsGPIO();
 }
 
 extern uint16 PPG_ProcessEvent( uint8 task_id, uint16 events )
@@ -287,7 +287,7 @@ static void gapStateCB( gaprole_States_t newState )
   {
     stopPpgSampling();
     //initIOPin();
-    ADS1x9x_PowerDown();
+    //ADS1x9x_PowerDown();
   }
   // if started
   else if (newState == GAPROLE_STARTED)

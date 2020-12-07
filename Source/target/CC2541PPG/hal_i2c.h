@@ -54,17 +54,17 @@ typedef enum {
 * @param address : 设备地址，是指没有左移一位的地址，内部会左移一位
 * @param clockRate : I2C的时钟频率
 */ 
-extern void HalI2CInit(uint8 address, i2cClock_t clockRate);
+extern void IIC_Enable(uint8 address, i2cClock_t clockRate);
 
 // 读指定长度数据
-extern uint8 HalI2CRead(uint8 len, uint8 *pBuf);
+extern uint8 IIC_Read(uint8 len, uint8 *pBuf);
 
 // 写指定长度数据
-extern uint8 HalI2CWrite(uint8 len, uint8 *pBuf);
+extern uint8 IIC_Write(uint8 len, uint8 *pBuf);
 
 // disable I2C模块, 主要用在hal_sleep中在休眠模式下关闭I2C
-extern void HalI2CDisable(void);
+extern void IIC_Disable(void);
 
-extern void HalI2CSetAsGPIO();
+extern void IIC_SetAsGPIO();
 
 #endif /*  HAL_I2C_H  */

@@ -143,7 +143,7 @@ static uint8 i2cMstStrt(uint8 RD_WRn)
 * @param address : 设备地址，是指没有左移一位的地址
 * @param clockRate : I2C的时钟频率
 */
-extern void HalI2CInit(uint8 address, i2cClock_t clockRate)
+extern void IIC_Enable(uint8 address, i2cClock_t clockRate)
 {
   i2cAddr = address << 1;
   
@@ -153,8 +153,14 @@ extern void HalI2CInit(uint8 address, i2cClock_t clockRate)
   I2C_ENABLE();
 }
 
+// disable I2C模块
+extern void IIC_Disable(void)
+{
+  I2C_DISABLE();
+}
+
 /**************************************************************************************************
- * @fn          HalI2CRead
+ * @fn          IIC_Read
  *
  * @brief       读指定长度的数据
 
@@ -163,7 +169,7 @@ extern void HalI2CInit(uint8 address, i2cClock_t clockRate)
  *
  * @return      成功读取的字节长度
  */
-extern uint8 HalI2CRead(uint8 len, uint8 *pBuf)
+extern uint8 IIC_Read(uint8 len, uint8 *pBuf)
 {
   uint8 cnt = 0;
 
@@ -210,7 +216,7 @@ extern uint8 HalI2CRead(uint8 len, uint8 *pBuf)
 }
 
 /**************************************************************************************************
- * @fn          HalI2CWrite
+ * @fn          I2C_Write
  *
  * @brief       写一定长度的数据
  *
@@ -221,7 +227,7 @@ extern uint8 HalI2CRead(uint8 len, uint8 *pBuf)
  *
  * @return      成功写入的数据字节长度
  */
-extern uint8 HalI2CWrite(uint8 len, uint8 *pBuf)
+extern uint8 IIC_Write(uint8 len, uint8 *pBuf)
 {
   if (i2cMstStrt(I2C_WRITE_BIT) != mstAddrAckW)
   {
@@ -255,17 +261,11 @@ extern uint8 HalI2CWrite(uint8 len, uint8 *pBuf)
 }
 
 // 一定要把I2C的接口设为GPIO才能省电
-extern void HalI2CSetAsGPIO()
+extern void IIC_SetAsGPIO()
 {
   // I2C的SDA, SCL设置为GPIO
   I2CWC = 0x8C;   //GPIO,000,SCL pullup Eable, SDA pullup Eable, SCL output disable, SDA output disable
   I2CIO = 0x03;   //000000, SCL Output register=1, SDA Output register=1
-}
-
-// disable I2C模块
-extern void HalI2CDisable(void)
-{
-  I2C_DISABLE();
 }
 
 

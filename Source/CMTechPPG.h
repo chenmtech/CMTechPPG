@@ -1,5 +1,5 @@
 /**************************************************************************************************
-* CMTechHRM.h : Heart Rate Monitor application header file
+* CMTechPPG.h : PPG application header file
 **************************************************************************************************/
 
 #ifndef CMTECHPPG_H
@@ -7,7 +7,7 @@
 
 
 #define PPG_START_DEVICE_EVT 0x0001      // device start event
-#define PPG_PACKET_NOTI_EVT 0x0002       // PPG packet notification event
+#define PPG_PACKET_NOTI_EVT 0x0002       // PPG data packet notification event
 
 /*
  * Task Initialization for the BLE Application

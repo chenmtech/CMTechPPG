@@ -18,11 +18,12 @@ static uint8 taskId; // taskId of application
 static uint8 pckNum = 0;
 // ppg packet buffer
 static uint8 ppgBuff[PPG_PACK_BYTE_NUM] = {0};
-// pointer to the ppg buff
+// pointer to the current position of the ppg buff
 static uint8* pPpgBuff;
 // ppg packet structure sent out
 static attHandleValueNoti_t ppgNoti;
 
+// the callback function to process the PPG data from MAX30102
 static void processPpgSignal(uint16 red, uint16 ir);
 
 extern void PPGFunc_Init(uint8 taskID)
@@ -42,16 +43,12 @@ extern void PPGFunc_SetPpgSampling(bool start)
   osal_clear_event(taskId, PPG_PACKET_NOTI_EVT);
   if(start)
   {
-    ADS1x9x_WakeUp(); 
-    // 这里一定要延时，否则容易死机
-    delayus(1000);
-    ADS1x9x_StartConvert();
+    MAX30102_Start();
     delayus(1000);
   } 
   else
   {
-    ADS1x9x_StopConvert();
-    ADS1x9x_StandBy();
+    MAX30102_Stop();
     delayus(2000);
   }
 }

@@ -9,7 +9,7 @@
 #include "hal_types.h"
 
 extern void PPGFunc_Init(uint8 taskID); //init
-extern void PPGFunc_SetPpgSampling(bool start); // is the PPG sampling started
-extern void PPGFunc_SendPpgPacket(uint16 connHandle); // send PPG packet
+extern void PPGFunc_SetPpgSampling(bool start); // set up the PPG sampling started or stopped
+extern void PPGFunc_SendPpgPacket(uint16 connHandle); // send PPG data packet
 
 #endif
