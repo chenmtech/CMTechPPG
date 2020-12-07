@@ -6385,12 +6385,6 @@
       <name>$PROJ_DIR$\..\Source\CMUtil.h</name>
     </file>
     <file>
-      <name>$PROJ_DIR$\..\Source\Dev_ADS1x9x.c</name>
-    </file>
-    <file>
-      <name>$PROJ_DIR$\..\Source\Dev_ADS1x9x.H</name>
-    </file>
-    <file>
       <name>$PROJ_DIR$\..\Source\Dev_MAX30102.cpp</name>
     </file>
     <file>
@@ -6409,7 +6403,7 @@
       <name>$PROJ_DIR$\..\Source\Service_PPG.c</name>
     </file>
     <file>
-      <name>$PROJ_DIR$\..\Source\Service_PPG.h</name>
+      <name>$PROJ_DIR$\..\Source\service_PPG.h</name>
     </file>
   </group>
   <group>
