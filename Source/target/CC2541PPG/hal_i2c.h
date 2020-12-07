@@ -51,7 +51,7 @@ typedef enum {
 * 初始化I2C模块，设置I2C从机的地址，以及通信的时钟频率
 * 不是说开始初始化一次就可以
 * 而是，每次读取数据之前，都要调用此函数初始化
-* @param address : 设备地址，是指没有右移一位的地址，内部会右移一位
+* @param address : 设备地址，是指没有左移一位的地址，内部会左移一位
 * @param clockRate : I2C的时钟频率
 */ 
 extern void HalI2CInit(uint8 address, i2cClock_t clockRate);

@@ -1,6 +1,10 @@
 /**************************************************************************************************
-* CMTechTempHumid.c: 应用主源文件
+* CMTechHRMonitor.c: main application source file
 **************************************************************************************************/
+
+/*********************************************************************
+ * INCLUDES
+ */
 
 #include "bcomdef.h"
 #include "OSAL.h"
@@ -12,135 +16,139 @@
 #include "hci.h"
 #include "gapgattserver.h"
 #include "gattservapp.h"
-#include "Service_DevInfo.h"
-#include "Service_TempHumid.h"
+
 #if defined ( PLUS_BROADCASTER )
   #include "peripheralBroadcaster.h"
 #else
   #include "peripheral.h"
 #endif
 #include "gapbondmgr.h"
-#include "hal_i2c.h"
-#include "CMTechTempHumid.h"
 #if defined FEATURE_OAD
   #include "oad.h"
   #include "oad_target.h"
 #endif
 
 
-#define INVALID_CONNHANDLE 0xFFFF
+#include "hal_i2c.h"
+#include "CMUtil.h"
+#include "CMTechPPG.h"
+#include "Service_DevInfo.h"
+#include "Service_PPG.h"
+#include "App_PPGFunc.h"
 
-#define STATUS_MEAS_STOP  0     
-#define STATUS_MEAS_START 1   
+#define ADVERTISING_INTERVAL 320 // ad interval, units of 0.625ms
+#define ADVERTISING_DURATION 2000 // ad duration, units of ms
+#define ADVERTISING_OFFTIME 8000 // ad offtime to wait for a next ad, units of ms
 
-#define DEFAULT_MEAS_PERIOD 10 // default T&H measurement period, uints: second
-// 
+// connection parameter in PPG mode
+#define PPG_MODE_MIN_INTERVAL 16  // unit: 1.25ms
+#define PPG_MODE_MAX_INTERVAL 32  // unit: 1.25ms
+#define PPG_MODE_SLAVE_LATENCY 4
+#define PPG_MODE_CONNECT_TIMEOUT 100 // unit: 10ms, If no connection event occurred during this timeout, the connect will be shut down.
+
+#define CONN_PAUSE_PERIPHERAL 4  // the pause time from the connection establishment to the update of the connection parameters
+
+#define INVALID_CONNHANDLE 0xFFFF // invalid connection handle
+#define STATUS_PPG_STOP 0x00     // PPG sampling stopped status
+#define STATUS_PPG_START 0x01    // PPG sampling started status
+
+
 static uint8 taskID;   
 static uint16 gapConnHandle = INVALID_CONNHANDLE;
 static gaprole_States_t gapProfileState = GAPROLE_INIT;
+static uint8 attDeviceName[GAP_DEVICE_NAME_LEN] = "KM PPG"; // GGS device name
+static uint8 status = STATUS_PPG_STOP; // PPG sampling status
+static uint16 ppgSampleRate = 100;
 
-// advertising data
+// advertise data
 static uint8 advertData[] = 
 { 
   0x02,   // length of this data
   GAP_ADTYPE_FLAGS,
   GAP_ADTYPE_FLAGS_GENERAL | GAP_ADTYPE_FLAGS_BREDR_NOT_SUPPORTED,
 
-  // T&H service UUID
+  // service UUID
   0x03,   // length of this data
   GAP_ADTYPE_16BIT_MORE,
-  LO_UINT16( TEMPHUMID_SERV_UUID ),
-  HI_UINT16( TEMPHUMID_SERV_UUID ),
+  LO_UINT16( PPG_SERV_UUID ),
+  HI_UINT16( PPG_SERV_UUID ),
+
 };
 
 // scan response data
 static uint8 scanResponseData[] =
 {
-  0x07,   // length of this data
+  0x06,   // length of this data
   GAP_ADTYPE_LOCAL_NAME_SHORT,   
-  'C',
+  'K',
   'M',
-  '_',
-  'T',
-  'H',
-  'S'
+  'P',
+  'P',
+  'G'
 };
 
-// GGS device name
-static uint8 attDeviceName[GAP_DEVICE_NAME_LEN] = "CM Temp Humid";
-
-// current measurement status
-static uint8 status = STATUS_MEAS_STOP;
-
-// measurement interval
-static uint16 interval = DEFAULT_MEAS_PERIOD;
-
-
-static void gapRoleStateCB( gaprole_States_t newState ); // GAP Role callback function
-static void thServiceCB( uint8 event ); // T&H callback function
+static void gapStateCB( gaprole_States_t newState ); // gap state callback function
+static void ppgServiceCB( uint8 event ); // PPG service callback function
 
 // GAP Role callback struct
-static gapRolesCBs_t gapRoleStateCBs =
+static gapRolesCBs_t gapStateCBs =
 {
-  gapRoleStateCB,  // Profile State Change Callbacks
-  NULL                   // When a valid RSSI is read from controller (not used by application)
+  gapStateCB,         // Profile State Change Callbacks
+  NULL                // When a valid RSSI is read from controller (not used by application)
 };
 
-// bond callback struct
-static gapBondCBs_t thBondCBs =
+static gapBondCBs_t bondCBs =
 {
   NULL,                   // Passcode callback
   NULL                    // Pairing state callback
 };
 
-// T&H callback struct
-static thServiceCBs_t thServCBs =
+// PPG service callback struct
+static PPGServiceCBs_t ppgServCBs =
 {
-  thServiceCB    
+  ppgServiceCB    
 };
 
+static void processOSALMsg( osal_event_hdr_t *pMsg ); // OSAL message process function
+static void initIOPin(); // initialize IO pins
+static void startPpgSampling( void ); // start PPG sampling
+static void stopPpgSampling( void ); // stop PPG sampling
 
-static void processOSALMsg( osal_event_hdr_t *pMsg ); // 
-static void startTHMeas( void ); // start T&H measurement
-static void stopTHMeas( void ); // stop T&H measurement
-static void initIOPin(); // initialize I/O pins
-
-/*********************************************************************
- * 公共函数
- */
-extern void TempHumid_Init( uint8 task_id )
-{
+extern void PPG_Init( uint8 task_id )
+{ 
   taskID = task_id;
+  
+  HCI_EXT_SetTxPowerCmd (LL_EXT_TX_POWER_0_DBM);
   
   // Setup the GAP Peripheral Role Profile
   {
-    // 
+    // set the advertising data and scan response data
     GAPRole_SetParameter( GAPROLE_ADVERT_DATA, sizeof( advertData ), advertData );
     GAPRole_SetParameter( GAPROLE_SCAN_RSP_DATA, sizeof ( scanResponseData ), scanResponseData );
     
-    // 
-    GAP_SetParamValue( TGAP_GEN_DISC_ADV_INT_MIN, 1600 ); // units of 0.625ms
-    GAP_SetParamValue( TGAP_GEN_DISC_ADV_INT_MAX, 1600 ); // units of 0.625ms
-    GAP_SetParamValue( TGAP_GEN_DISC_ADV_MIN, 0 ); // 不停地广播
+    // set the advertising parameters
+    GAP_SetParamValue( TGAP_GEN_DISC_ADV_INT_MIN, ADVERTISING_INTERVAL ); // units of 0.625ms
+    GAP_SetParamValue( TGAP_GEN_DISC_ADV_INT_MAX, ADVERTISING_INTERVAL ); // units of 0.625ms
+    GAP_SetParamValue( TGAP_GEN_DISC_ADV_MIN, ADVERTISING_DURATION ); // advertising duration
+    uint16 gapRole_AdvertOffTime = ADVERTISING_OFFTIME;
+    GAPRole_SetParameter( GAPROLE_ADVERT_OFF_TIME, sizeof( uint16 ), &gapRole_AdvertOffTime );
     
     // enable advertising
     uint8 advertising = TRUE;
     GAPRole_SetParameter( GAPROLE_ADVERT_ENABLED, sizeof( uint8 ), &advertising );
-    
-    // set the pause time from the connection and the update of the connection parameters
-    // during the time, client can finish the tasks e.g. service discovery 
-    // the unit of time is second
-    GAP_SetParamValue( TGAP_CONN_PAUSE_PERIPHERAL, 2 ); 
+
+    GAP_SetParamValue( TGAP_CONN_PAUSE_PERIPHERAL, CONN_PAUSE_PERIPHERAL ); 
     
     // set the connection parameter
-    uint16 desired_min_interval = 200;  // units of 1.25ms 
-    uint16 desired_max_interval = 1600; // units of 1.25ms
-    uint16 desired_slave_latency = 1;
-    uint16 desired_conn_timeout = 1000; // units of 10ms
+    uint16 desired_min_interval = PPG_MODE_MIN_INTERVAL;
+    uint16 desired_max_interval = PPG_MODE_MAX_INTERVAL;
+    uint16 desired_slave_latency = PPG_MODE_SLAVE_LATENCY;
+    uint16 desired_conn_timeout = PPG_MODE_CONNECT_TIMEOUT; 
     GAPRole_SetParameter( GAPROLE_MIN_CONN_INTERVAL, sizeof( uint16 ), &desired_min_interval );
     GAPRole_SetParameter( GAPROLE_MAX_CONN_INTERVAL, sizeof( uint16 ), &desired_max_interval );
     GAPRole_SetParameter( GAPROLE_SLAVE_LATENCY, sizeof( uint16 ), &desired_slave_latency );
-    GAPRole_SetParameter( GAPROLE_TIMEOUT_MULTIPLIER, sizeof( uint16 ), &desired_conn_timeout );
+    GAPRole_SetParameter( GAPROLE_TIMEOUT_MULTIPLIER, sizeof( uint16 ), &desired_conn_timeout );  
+    
     uint8 enable_update_request = TRUE;
     GAPRole_SetParameter( GAPROLE_PARAM_UPDATE_ENABLE, sizeof( uint8 ), &enable_update_request );
   }
@@ -162,33 +170,32 @@ extern void TempHumid_Init( uint8 task_id )
     GAPBondMgr_SetParameter( GAPBOND_BONDING_ENABLED, sizeof ( uint8 ), &bonding );
   }  
 
-  // set T&H Characteristic Values
-  {
-    TempHumid_SetParameter( TEMPHUMID_INTERVAL, sizeof(uint16), &interval );
-  }
-  
   // Initialize GATT attributes
   GGS_AddService( GATT_ALL_SERVICES );         // GAP
   GATTServApp_AddService( GATT_ALL_SERVICES ); // GATT attributes
-  TempHumid_AddService( GATT_ALL_SERVICES ); // Temperature&Humid service
   DevInfo_AddService( ); // device information service
   
-  TempHumid_RegisterAppCBs( &thServCBs );
+  PPG_AddService(GATT_ALL_SERVICES); // ppg service
+  PPG_RegisterAppCBs( &ppgServCBs );  
+  
+  // set sample rate in ppg service
+  {
+    PPG_SetParameter( PPG_SAMPLE_RATE, sizeof ( uint16 ), &ppgSampleRate ); 
+  }
   
   //在这里初始化GPIO
   //第一：所有管脚，reset后的状态都是输入加上拉
   //第二：对于不用的IO，建议不连接到外部电路，且设为输入上拉
   //第三：对于会用到的IO，就要根据具体外部电路连接情况进行有效设置，防止耗电
-  {
-    initIOPin();
-  }
+  initIOPin();
+  
+  PPGFunc_Init(taskID);
   
   HCI_EXT_ClkDivOnHaltCmd( HCI_EXT_ENABLE_CLK_DIVIDE_ON_HALT );  
 
   // 启动设备
-  osal_set_event( taskID, TEMPHUMID_START_DEVICE_EVT );
+  osal_set_event( taskID, PPG_START_DEVICE_EVT );
 }
-
 
 // 初始化IO管脚
 static void initIOPin()
@@ -205,13 +212,13 @@ static void initIOPin()
 
   P0 = 0; 
   P1 = 0;   
-  P2 = 0;  
+  P2 = 0; 
   
   // I2C的SDA, SCL设置为GPIO, 输出低电平，否则功耗很大
   HalI2CSetAsGPIO();
 }
 
-extern uint16 TempHumid_ProcessEvent( uint8 task_id, uint16 events )
+extern uint16 PPG_ProcessEvent( uint8 task_id, uint16 events )
 {
   VOID task_id; // OSAL required parameter that isn't used in this function
 
@@ -231,26 +238,26 @@ extern uint16 TempHumid_ProcessEvent( uint8 task_id, uint16 events )
     return (events ^ SYS_EVENT_MSG);
   }
 
-  if ( events & TEMPHUMID_START_DEVICE_EVT )
+  if ( events & PPG_START_DEVICE_EVT )
   {    
     // Start the Device
-    VOID GAPRole_StartDevice( &gapRoleStateCBs );
+    VOID GAPRole_StartDevice( &gapStateCBs );
 
     // Start Bond Manager
-    VOID GAPBondMgr_Register( &thBondCBs );
+    VOID GAPBondMgr_Register( &bondCBs );
 
-    return ( events ^ TEMPHUMID_START_DEVICE_EVT );
+    return ( events ^ PPG_START_DEVICE_EVT );
   }
   
-  if ( events & TEMPHUMID_MEAS_PERIODIC_EVT )
+  if ( events & PPG_PACKET_NOTI_EVT )
   {
-    if(gapProfileState == GAPROLE_CONNECTED && status == STATUS_MEAS_START) {
-      osal_start_timerEx( taskID, TEMPHUMID_MEAS_PERIODIC_EVT, interval*1000 );
-      TempHumid_TempHumidIndicate( gapConnHandle, taskID); 
+    if (gapProfileState == GAPROLE_CONNECTED)
+    {
+      PPGFunc_SendPpgPacket(gapConnHandle);
     }
 
-    return (events ^ TEMPHUMID_MEAS_PERIODIC_EVT);
-  }
+    return (events ^ PPG_PACKET_NOTI_EVT);
+  } 
   
   // Discard unknown events
   return 0;
@@ -266,7 +273,7 @@ static void processOSALMsg( osal_event_hdr_t *pMsg )
   }
 }
 
-static void gapRoleStateCB( gaprole_States_t newState )
+static void gapStateCB( gaprole_States_t newState )
 {
   // 已连接
   if( newState == GAPROLE_CONNECTED)
@@ -278,8 +285,9 @@ static void gapRoleStateCB( gaprole_States_t newState )
   else if(gapProfileState == GAPROLE_CONNECTED && 
             newState != GAPROLE_CONNECTED)
   {
-    stopTHMeas();
+    stopPpgSampling();
     //initIOPin();
+    ADS1x9x_PowerDown();
   }
   // if started
   else if (newState == GAPROLE_STARTED)
@@ -301,43 +309,42 @@ static void gapRoleStateCB( gaprole_States_t newState )
   }
   
   gapProfileState = newState;
-
 }
 
-static void thServiceCB( uint8 event )
+// start PPG Sampling
+static void startPpgSampling( void )
+{  
+  if(status == STATUS_PPG_STOP) 
+  {
+    status = STATUS_PPG_START;
+    PPGFunc_SetPpgSampling(true);
+  }
+}
+
+// stop PPG Sampling
+static void stopPpgSampling( void )
+{  
+  if(status == STATUS_PPG_START)
+  {
+    status = STATUS_PPG_STOP;
+    PPGFunc_SetPpgSampling(false);
+  }
+}
+
+static void ppgServiceCB( uint8 event )
 {
   switch (event)
   {
-    case TEMPHUMID_DATA_IND_ENABLED:
-      startTHMeas();
+    case PPG_PACK_NOTI_ENABLED:
+      startPpgSampling();
       break;
         
-    case TEMPHUMID_DATA_IND_DISABLED:
-      stopTHMeas();
-      break;
-
-    case TEMPHUMID_INTERVAL_SET:
-      TempHumid_GetParameter( TEMPHUMID_INTERVAL, &interval );
+    case PPG_PACK_NOTI_DISABLED:
+      stopPpgSampling();
       break;
       
     default:
       // Should not get here
       break;
   }
-}
-
-// 
-static void startTHMeas( void )
-{  
-  if(status == STATUS_MEAS_STOP) {
-    status = STATUS_MEAS_START;
-    osal_start_timerEx( taskID, TEMPHUMID_MEAS_PERIODIC_EVT, interval*1000);
-  }
-}
-
-// 
-static void stopTHMeas( void )
-{  
-  status = STATUS_MEAS_STOP;
-  osal_stop_timerEx( taskID, TEMPHUMID_MEAS_PERIODIC_EVT ); 
 }

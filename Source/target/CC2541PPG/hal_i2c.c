@@ -102,7 +102,7 @@ typedef enum {
  *                                       Local Variables and Functions
  * ------------------------------------------------------------------------------------------------
  */
-static uint8 i2cAddr;  // 用来保存右移一位之后的地址
+static uint8 i2cAddr;  // 用来保存左移一位之后的地址
 
 
 /**************************************************************************************************
@@ -111,8 +111,6 @@ static uint8 i2cAddr;  // 用来保存右移一位之后的地址
  * @brief       启动I2C主模式，包括发送START，以及Slave Address+R/~W
  *
  * input parameters
- *
- * @param       address - 从机地址，一定要7位的。如果文档提供的是8位地址，要右移一位
  * @param       RD_WRn - 1：表示后面为读操作；0：表示后面为写操作
  *
  * output parameters
@@ -142,7 +140,7 @@ static uint8 i2cMstStrt(uint8 RD_WRn)
 * 初始化I2C模块，设置I2C从机的地址，以及通信的时钟频率
 * 不是说开始初始化一次就可以
 * 而是，每次读取数据之前，都要调用此函数初始化
-* @param address : 设备地址，是指没有右移一位的地址，内部会右移一位
+* @param address : 设备地址，是指没有左移一位的地址
 * @param clockRate : I2C的时钟频率
 */
 extern void HalI2CInit(uint8 address, i2cClock_t clockRate)
