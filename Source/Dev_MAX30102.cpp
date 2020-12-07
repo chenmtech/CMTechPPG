@@ -1,9 +1,10 @@
 /*
-* MAX30102: 脉搏和心率传感器设备驱动
+* MAX30102: 脉搏和心率传感器MAX30102驱动
 * Written by Chenm 2020-12-07
 */
 
 
+#include "hal_i2c.h"
 #include "Dev_MAX30102.h"
 #include "hal_mcu.h"
 #include "CMUtil.h"
@@ -13,11 +14,13 @@
 */
 #define I2C_ADDR 0x57   //MAX30102的I2C地址
 
+static const uint8 MAX_30105_EXPECTEDPARTID = 0x15;
+
 // Status Registers
 static const uint8 MAX30102_INTSTAT1 =		0x00;
 static const uint8 MAX30102_INTSTAT2 =		0x01;
-static const uint8 MAX30102_INTENABLE1 =		0x02;
-static const uint8 MAX30102_INTENABLE2 =		0x03;
+static const uint8 MAX30102_INTENABLE1 =	0x02;
+static const uint8 MAX30102_INTENABLE2 =	0x03;
 
 // FIFO Registers
 static const uint8 MAX30102_FIFOWRITEPTR = 	0x04;
@@ -26,23 +29,18 @@ static const uint8 MAX30102_FIFOREADPTR = 	0x06;
 static const uint8 MAX30102_FIFODATA =		0x07;
 
 // Configuration Registers
-static const uint8 MAX30102_FIFOCONFIG = 		0x08;
-static const uint8 MAX30102_MODECONFIG = 		0x09;
-static const uint8 MAX30102_PARTICLECONFIG = 	0x0A;    // Note, sometimes listed as "SPO2" config in datasheet (pg. 11)
+static const uint8 MAX30102_FIFOCONFIG = 	0x08;
+static const uint8 MAX30102_MODECONFIG = 	0x09;
+static const uint8 MAX30102_SPO2CONFIG = 	0x0A;    // Note, sometimes listed as "SPO2" config in datasheet (pg. 11)
 static const uint8 MAX30102_LED1_PULSEAMP = 	0x0C;
 static const uint8 MAX30102_LED2_PULSEAMP = 	0x0D;
-static const uint8 MAX30102_LED3_PULSEAMP = 	0x0E;
-static const uint8 MAX30102_LED_PROX_AMP = 	0x10;
-static const uint8 MAX30102_MULTILEDCONFIG1 = 0x11;
-static const uint8 MAX30102_MULTILEDCONFIG2 = 0x12;
+static const uint8 MAX30102_MULTILEDCONFIG1 =   0x11;
+static const uint8 MAX30102_MULTILEDCONFIG2 =   0x12;
 
 // Die Temperature Registers
-static const uint8 MAX30102_DIETEMPINT = 		0x1F;
+static const uint8 MAX30102_DIETEMPINT = 	0x1F;
 static const uint8 MAX30102_DIETEMPFRAC = 	0x20;
 static const uint8 MAX30102_DIETEMPCONFIG = 	0x21;
-
-// Proximity Function Registers
-static const uint8 MAX30102_PROXINTTHRESH = 	0x30;
 
 // Part ID Registers
 static const uint8 MAX30102_REVISIONID = 		0xFE;
@@ -54,17 +52,14 @@ static const uint8 MAX30102_INT_A_FULL_MASK =		(uint8)~0x80;
 static const uint8 MAX30102_INT_A_FULL_ENABLE = 	0x80;
 static const uint8 MAX30102_INT_A_FULL_DISABLE = 	0x00;
 
-static const uint8 MAX30102_INT_DATA_RDY_MASK = (uint8)~0x40;
+static const uint8 MAX30102_INT_DATA_RDY_MASK =         (uint8)~0x40;
 static const uint8 MAX30102_INT_DATA_RDY_ENABLE =	0x40;
-static const uint8 MAX30102_INT_DATA_RDY_DISABLE = 0x00;
+static const uint8 MAX30102_INT_DATA_RDY_DISABLE =      0x00;
 
-static const uint8 MAX30102_INT_ALC_OVF_MASK = (uint8)~0x20;
+// 去除环境光功能达到最大极限，意味着环境光对输出产生了影响
+static const uint8 MAX30102_INT_ALC_OVF_MASK =          (uint8)~0x20;
 static const uint8 MAX30102_INT_ALC_OVF_ENABLE = 	0x20;
-static const uint8 MAX30102_INT_ALC_OVF_DISABLE = 0x00;
-
-static const uint8 MAX30102_INT_PROX_INT_MASK = (uint8)~0x10;
-static const uint8 MAX30102_INT_PROX_INT_ENABLE = 0x10;
-static const uint8 MAX30102_INT_PROX_INT_DISABLE = 0x00;
+static const uint8 MAX30102_INT_ALC_OVF_DISABLE =       0x00;
 
 static const uint8 MAX30102_INT_DIE_TEMP_RDY_MASK = (uint8)~0x02;
 static const uint8 MAX30102_INT_DIE_TEMP_RDY_ENABLE = 0x02;
@@ -135,7 +130,6 @@ static const uint8 SLOT_RED_PILOT =			0x05;
 static const uint8 SLOT_IR_PILOT = 			0x06;
 static const uint8 SLOT_GREEN_PILOT = 		0x07;
 
-static const uint8 MAX_30105_EXPECTEDPARTID = 0x15;
 
 
 
@@ -150,29 +144,6 @@ static void readOneSampleData();
 
 static void bitMask(uint8 reg, uint8 mask, uint8 thing);
 
-/*
-* 局部函数
-*/
-
-// 设置INT中断
-static void initIntPin()
-{
-  //P0.1 INT管脚配置  
-  //先关P0.1即INT中断
-  P0IEN &= ~(1<<1);
-  P0IFG &= ~(1<<1);   // clear P0_1 interrupt status flag
-  P0IF = 0;           //clear P0 interrupt flag  
-  
-  //配置P0.1即INT 中断
-  P0SEL &= ~(1<<1); //GPIO
-  P0DIR &= ~(1<<1); //Input
-  PICTL |= (1<<0);  //下降沿触发
-  //////////////////////////
-  
-  //开P0.1 INT中断
-  P0IEN |= (1<<1);    // P0_1 interrupt enable
-  P0IE = 1;           // P0 interrupt enable  
-}
 
 /*
 * 公共函数
@@ -195,6 +166,11 @@ extern void MAX30102_Stop()
   IIC_Disable();
 }
 
+
+
+/*
+* 局部函数
+*/
 
 //Begin Interrupt configuration
 static uint8 getINT1(void) {
@@ -225,13 +201,6 @@ static void disableALCOVF(void) {
   bitMask(MAX30102_INTENABLE1, MAX30102_INT_ALC_OVF_MASK, MAX30102_INT_ALC_OVF_DISABLE);
 }
 
-static void enablePROXINT(void) {
-  bitMask(MAX30102_INTENABLE1, MAX30102_INT_PROX_INT_MASK, MAX30102_INT_PROX_INT_ENABLE);
-}
-static void disablePROXINT(void) {
-  bitMask(MAX30102_INTENABLE1, MAX30102_INT_PROX_INT_MASK, MAX30102_INT_PROX_INT_DISABLE);
-}
-
 static void enableDIETEMPRDY(void) {
   bitMask(MAX30102_INTENABLE2, MAX30102_INT_DIE_TEMP_RDY_MASK, MAX30102_INT_DIE_TEMP_RDY_ENABLE);
 }
@@ -240,6 +209,7 @@ static void disableDIETEMPRDY(void) {
 }
 
 //End Interrupt configuration
+
 
 static void softReset(void) {
   bitMask(MAX30102_MODECONFIG, MAX30102_RESET_MASK, MAX30102_RESET);
@@ -272,17 +242,17 @@ static void setLEDMode(uint8 mode) {
 
 static void setADCRange(uint8 adcRange) {
   // adcRange: one of MAX30102_ADCRANGE_2048, _4096, _8192, _16384
-  bitMask(MAX30102_PARTICLECONFIG, MAX30102_ADCRANGE_MASK, adcRange);
+  bitMask(MAX30102_SPO2CONFIG, MAX30102_ADCRANGE_MASK, adcRange);
 }
 
 static void setSampleRate(uint8 sampleRate) {
   // sampleRate: one of MAX30102_SAMPLERATE_50, _100, _200, _400, _800, _1000, _1600, _3200
-  bitMask(MAX30102_PARTICLECONFIG, MAX30102_SAMPLERATE_MASK, sampleRate);
+  bitMask(MAX30102_SPO2CONFIG, MAX30102_SAMPLERATE_MASK, sampleRate);
 }
 
 static void setPulseWidth(uint8 pulseWidth) {
   // pulseWidth: one of MAX30102_PULSEWIDTH_69, _188, _215, _411
-  bitMask(MAX30102_PARTICLECONFIG, MAX30102_PULSEWIDTH_MASK, pulseWidth);
+  bitMask(MAX30102_SPO2CONFIG, MAX30102_PULSEWIDTH_MASK, pulseWidth);
 }
 
 // NOTE: Amplitude values: 0x00 = 0mA, 0x7F = 25.4mA, 0xFF = 50mA (typical)
@@ -362,19 +332,37 @@ static void writeOneByte(uint8 reg, uint8 data)
 
 static uint8 readOneByte(uint8 reg)
 {
-  IIC_Write(1, &reg);
   uint8 data = 0;
+  IIC_Write(1, &reg);
   IIC_Read(1, &data);
   return data;
 }
 
-static void readMultipleBytes(uint8 rAddress, uint8 len, uint8* pBuff)
+static void readMultipleBytes(uint8 reg, uint8 len, uint8* pBuff)
 {
-  IIC_Write(1, &rAddress);
+  IIC_Write(1, &reg);
   IIC_Read(len, pBuff);
 }
 
-
+// 设置INT中断
+static void initIntPin()
+{
+  //P0.1 INT管脚配置  
+  //先关P0.1即INT中断
+  P0IEN &= ~(1<<1);
+  P0IFG &= ~(1<<1);   // clear P0_1 interrupt status flag
+  P0IF = 0;           //clear P0 interrupt flag  
+  
+  //配置P0.1即INT 中断
+  P0SEL &= ~(1<<1); //GPIO
+  P0DIR &= ~(1<<1); //Input
+  PICTL |= (1<<0);  //下降沿触发
+  //////////////////////////
+  
+  //开P0.1 INT中断
+  P0IEN |= (1<<1);    // P0_1 interrupt enable
+  P0IE = 1;           // P0 interrupt enable  
+}
 
 #pragma vector = P0INT_VECTOR
 __interrupt void PORT0_ISR(void)

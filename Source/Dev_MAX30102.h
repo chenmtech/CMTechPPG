@@ -1,12 +1,10 @@
 /*
- * MAX30102: 脉搏和心率传感器设备驱动
- * written by chenm
+ * MAX30102: 脉搏和心率传感器MAX30102驱动
+ * written by chenm 2020-12-07
 */
 
 #ifndef DEV_MAX30102_H
 #define DEV_MAX30102_H
-
-#include "hal_i2c.h"
 
 typedef void (*MAX30102_DataCB_t)(uint16 red, uint16 ir); // callback function to handle one sample data
 
