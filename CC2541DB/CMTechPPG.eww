@@ -2,33 +2,33 @@
 
 <workspace>
   <project>
-    <path>$WS_DIR$\CMTechTempHumid.ewp</path>
+    <path>$WS_DIR$\CMTechPPG.ewp</path>
   </project>
   <batchBuild>
     <batchDefinition>
       <name>All</name>
       <member>
-        <project>CMTechTempHumid</project>
+        <project>CMTechPPG</project>
         <configuration>CC2541</configuration>
       </member>
       <member>
-        <project>CMTechTempHumid</project>
+        <project>CMTechPPG</project>
         <configuration>CC2541DK-MINI Keyfob</configuration>
       </member>
       <member>
-        <project>CMTechTempHumid</project>
+        <project>CMTechPPG</project>
         <configuration>CC2541-OAD-ImgA</configuration>
       </member>
       <member>
-        <project>CMTechTempHumid</project>
+        <project>CMTechPPG</project>
         <configuration>CC2541-OAD-ImgB</configuration>
       </member>
       <member>
-        <project>CMTechTempHumid</project>
+        <project>CMTechPPG</project>
         <configuration>CC2541-OAD-Encrypted-ImgA</configuration>
       </member>
       <member>
-        <project>CMTechTempHumid</project>
+        <project>CMTechPPG</project>
         <configuration>CC2541-OAD-Encrypted-ImgB</configuration>
       </member>
     </batchDefinition>
