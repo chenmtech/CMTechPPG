@@ -6403,7 +6403,7 @@
       <name>$PROJ_DIR$\..\Source\Service_PPG.c</name>
     </file>
     <file>
-      <name>$PROJ_DIR$\..\Source\service_PPG.h</name>
+      <name>$PROJ_DIR$\..\Source\Service_PPG.h</name>
     </file>
   </group>
   <group>

@@ -15,9 +15,9 @@ extern void MAX30102_Init(MAX30102_DataCB_t pfnCB);
 
 extern void MAX30102_Setup(uint8 mode, uint16 sampleRate);
 
-extern void MAX30102_Start();
+extern void MAX30102_WakeUp();
 
-extern void MAX30102_Stop();
+extern void MAX30102_Shutdown();
 
 extern float MAX30102_ReadTemperature();
 #endif

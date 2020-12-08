@@ -33,7 +33,7 @@ extern void PPGFunc_Init(uint8 taskID, uint16 sampleRate)
   // initilize the MAX30102 and set the data process callback function
   MAX30102_Init(processPpgSignal);
   MAX30102_Setup(HR_MODE, sampleRate);
-  MAX30102_Stop();
+  MAX30102_Shutdown();
   delayus(1000);
 }
 
@@ -44,12 +44,12 @@ extern void PPGFunc_SetPpgSampling(bool start)
   osal_clear_event(taskId, PPG_PACKET_NOTI_EVT);
   if(start)
   {
-    MAX30102_Start();
+    MAX30102_WakeUp();
     delayus(1000);
   } 
   else
   {
-    MAX30102_Stop();
+    MAX30102_Shutdown();
     delayus(2000);
   }
 }

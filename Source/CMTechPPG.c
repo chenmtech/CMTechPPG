@@ -35,6 +35,7 @@
 #include "Service_DevInfo.h"
 #include "Service_PPG.h"
 #include "App_PPGFunc.h"
+#include "Dev_MAX30102.h"
 
 #define ADVERTISING_INTERVAL 320 // ad interval, units of 0.625ms
 #define ADVERTISING_DURATION 2000 // ad duration, units of ms
@@ -58,7 +59,7 @@ static uint16 gapConnHandle = INVALID_CONNHANDLE;
 static gaprole_States_t gapProfileState = GAPROLE_INIT;
 static uint8 attDeviceName[GAP_DEVICE_NAME_LEN] = "KM PPG"; // GGS device name
 static uint8 status = STATUS_PPG_STOP; // PPG sampling status
-static uint16 ppgSampleRate = 100;
+static uint16 ppgSampleRate = 50;
 
 // advertise data
 static uint8 advertData[] = 
@@ -214,8 +215,8 @@ static void initIOPin()
   P1 = 0;   
   P2 = 0; 
   
-  // I2C的SDA, SCL设置为GPIO, 输出低电平，否则功耗很大
   IIC_SetAsGPIO();
+  
 }
 
 extern uint16 PPG_ProcessEvent( uint8 task_id, uint16 events )
@@ -246,6 +247,7 @@ extern uint16 PPG_ProcessEvent( uint8 task_id, uint16 events )
     // Start Bond Manager
     VOID GAPBondMgr_Register( &bondCBs );
     
+  
     startPpgSampling();
 
     return ( events ^ PPG_START_DEVICE_EVT );

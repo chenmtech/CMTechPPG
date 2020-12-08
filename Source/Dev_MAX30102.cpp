@@ -14,7 +14,7 @@
 */
 #define I2C_ADDR 0x57   //MAX30102的I2C地址
 
-static const uint8 MAX_30105_EXPECTEDPARTID = 0x15;
+static const uint8 MAX30102_EXPECTEDPARTID = 0x15;
 
 // Status Registers
 static const uint8 MAX30102_INTSTAT1 =		0x00;
@@ -137,7 +137,7 @@ static MAX30102_DataCB_t pfnMAXDataCB; // callback function processing data
 static uint16 red = 0;
 static uint16 ir = 0;
 
-static void initIntPin();
+static void setINTPin();
 static void writeOneByte(uint8 reg, uint8 data);
 static uint8 readOneByte(uint8 reg);
 static void readMultipleBytes(uint8 reg, uint8 len, uint8* pBuff);
@@ -156,7 +156,7 @@ static void setSampleRate(uint8 sampleRate);
 static void setPulseWidth(uint8 pulseWidth);
 static void setPulseAmplitudeRed(uint8 amplitude);
 static void setPulseAmplitudeIR(uint8 amplitude);
-
+static uint8 readPartID();
 static void readOneSampleData();
 
 
@@ -166,8 +166,13 @@ static void readOneSampleData();
 extern void MAX30102_Init(MAX30102_DataCB_t pfnCB)
 {
   pfnMAXDataCB = pfnCB;
-  initIntPin();
-  IIC_Enable(I2C_ADDR, i2cClock_267KHZ);
+  //setINTPin();
+  delayus(2000);
+  IIC_Enable(I2C_ADDR, i2cClock_123KHZ);
+  delayus(2000);
+  // Step 1: Initial Communication and Verification
+  // Check that a MAX30105 is connected
+  readPartID();
 }
 
 extern void MAX30102_Setup(uint8 mode, uint16 sampleRate)
@@ -206,14 +211,16 @@ extern void MAX30102_Setup(uint8 mode, uint16 sampleRate)
 }
 
 //启动：设置Slave Address和SCLK频率
-extern void MAX30102_Start()
+extern void MAX30102_WakeUp()
 {
+  setINTPin();
+  delayus(2000);
   wakeUp();
   enableDATARDY();
 }
 
 //停止MAX30102
-extern void MAX30102_Stop()
+extern void MAX30102_Shutdown()
 {
   disableDATARDY();
   shutDown();
@@ -387,6 +394,10 @@ static uint8 getReadPointer()
   return readOneByte(MAX30102_FIFOREADPTR);
 }
 
+static uint8 readPartID() {
+  return readOneByte(MAX30102_PARTID);
+}
+
 //Given a register, read it, mask it, and then set the thing
 static void bitMask(uint8 reg, uint8 mask, uint8 thing)
 {
@@ -421,7 +432,7 @@ static void readMultipleBytes(uint8 reg, uint8 len, uint8* pBuff)
 }
 
 // 设置INT中断
-static void initIntPin()
+static void setINTPin()
 {
   //P0.1 INT管脚配置  
   //先关P0.1即INT中断
@@ -440,24 +451,27 @@ static void initIntPin()
   P0IE = 1;           // P0 interrupt enable  
 }
 
+uint8 intStatus1;
+uint8 ptRead = 0;
+uint8 ptWrite = 0;
 #pragma vector = P0INT_VECTOR
 __interrupt void PORT0_ISR(void)
 { 
   HAL_ENTER_ISR();  // Hold off interrupts.
   
+  
   P0IFG &= 0xFD; //~(1<<1);   //clear P0_1 IFG 
   P0IF = 0;      //clear P0 interrupt flag
   
-  uint8 intStatus1 = getINT1();
+  intStatus1 = getINT1();
   
   // data ready
-  if(intStatus1 & 0x40 != 0) {
-    uint8 ptRead = getReadPointer();
-    uint8 ptWrite = getWritePointer();
+  if((intStatus1 & 0x40) != 0) {
+    ptRead = getReadPointer();
+    ptWrite = getWritePointer();
     if(ptRead != ptWrite)
       readOneSampleData();
   }
-  
   HAL_EXIT_ISR();   // Re-enable interrupts.  
 }
 
@@ -467,7 +481,7 @@ static void readOneSampleData()
 {
   // 将read pointer指向write pointer后一个，即只读取最新的一个样本数据
   //uint8 ptWrite = readOneByte(MAX30102_FIFOWRITEPTR);
-  //ptWrite = (ptWrite == 0) ? 31 : ptWrite-1;
+  //ptWrite = ptWrite-1;
   //writeOneByte(MAX30102_FIFOREADPTR, ptWrite);
   
   uint8 buff[6] = {0};
@@ -479,6 +493,5 @@ static void readOneSampleData()
     num32 = BUILD_UINT32(buff[5], buff[4], buff[3], 0x00);
     ir = (uint16)(num32>>2);
   }
-  if(pfnMAXDataCB != NULL)
-    pfnMAXDataCB(red, ir, activeLED);
+  pfnMAXDataCB(red, ir, activeLED);
 }

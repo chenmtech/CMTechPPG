@@ -145,7 +145,7 @@ static uint8 i2cMstStrt(uint8 RD_WRn)
 */
 extern void IIC_Enable(uint8 address, i2cClock_t clockRate)
 {
-  i2cAddr = address << 1;
+  i2cAddr = (address << 1);
   
   I2C_WRAPPER_DISABLE();
   I2CADDR = 0; // no multi master support at this time
