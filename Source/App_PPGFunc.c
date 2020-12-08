@@ -24,15 +24,16 @@ static uint8* pPpgBuff;
 static attHandleValueNoti_t ppgNoti;
 
 // the callback function to process the PPG data from MAX30102
-static void processPpgSignal(uint16 red, uint16 ir);
+static void processPpgSignal(uint16 red, uint16 ir, uint8 activeLED);
 
-extern void PPGFunc_Init(uint8 taskID)
+extern void PPGFunc_Init(uint8 taskID, uint16 sampleRate)
 { 
   taskId = taskID;
   
   // initilize the MAX30102 and set the data process callback function
   MAX30102_Init(processPpgSignal);
-  
+  MAX30102_Setup(HR_MODE, sampleRate);
+  MAX30102_Stop();
   delayus(1000);
 }
 
@@ -58,7 +59,7 @@ extern void PPGFunc_SendPpgPacket(uint16 connHandle)
   PPG_PacketNotify( connHandle, &ppgNoti );
 }
 
-static void processPpgSignal(uint16 red, uint16 ir)
+static void processPpgSignal(uint16 red, uint16 ir, uint8 activeLED)
 {
   if(pPpgBuff == ppgBuff)
   {

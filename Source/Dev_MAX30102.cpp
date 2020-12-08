@@ -61,9 +61,9 @@ static const uint8 MAX30102_INT_ALC_OVF_MASK =          (uint8)~0x20;
 static const uint8 MAX30102_INT_ALC_OVF_ENABLE = 	0x20;
 static const uint8 MAX30102_INT_ALC_OVF_DISABLE =       0x00;
 
-static const uint8 MAX30102_INT_DIE_TEMP_RDY_MASK = (uint8)~0x02;
-static const uint8 MAX30102_INT_DIE_TEMP_RDY_ENABLE = 0x02;
-static const uint8 MAX30102_INT_DIE_TEMP_RDY_DISABLE = 0x00;
+static const uint8 MAX30102_INT_DIE_TEMP_RDY_MASK =     (uint8)~0x02;
+static const uint8 MAX30102_INT_DIE_TEMP_RDY_ENABLE =   0x02;
+static const uint8 MAX30102_INT_DIE_TEMP_RDY_DISABLE =  0x00;
 
 static const uint8 MAX30102_SAMPLEAVG_MASK =	(uint8)~0xE0;
 static const uint8 MAX30102_SAMPLEAVG_1 = 	0x00;
@@ -130,19 +130,34 @@ static const uint8 SLOT_RED_PILOT =			0x05;
 static const uint8 SLOT_IR_PILOT = 			0x06;
 static const uint8 SLOT_GREEN_PILOT = 		0x07;
 
-
+static uint8 activeLED = 1; // 激活的LED数，HR模式只有1个RED LED激活，SPO2模式有2个LED激活。用在读取sample中计算需要读取的byte数
 
 
 static MAX30102_DataCB_t pfnMAXDataCB; // callback function processing data 
+static uint16 red = 0;
+static uint16 ir = 0;
 
 static void initIntPin();
 static void writeOneByte(uint8 reg, uint8 data);
 static uint8 readOneByte(uint8 reg);
 static void readMultipleBytes(uint8 reg, uint8 len, uint8* pBuff);
+static void bitMask(uint8 reg, uint8 mask, uint8 thing);
+static uint8 getINT1(void);
+static uint8 getINT2(void);
+static void softReset();
+static void setLEDMode(uint8 mode);
+static void clearFIFO(void);
+static void shutDown(void);
+static void wakeUp(void);
+static void enableDATARDY(void);
+static void disableDATARDY(void);
+static void setADCRange(uint8 adcRange);
+static void setSampleRate(uint8 sampleRate);
+static void setPulseWidth(uint8 pulseWidth);
+static void setPulseAmplitudeRed(uint8 amplitude);
+static void setPulseAmplitudeIR(uint8 amplitude);
 
 static void readOneSampleData();
-
-static void bitMask(uint8 reg, uint8 mask, uint8 thing);
 
 
 /*
@@ -152,21 +167,82 @@ extern void MAX30102_Init(MAX30102_DataCB_t pfnCB)
 {
   pfnMAXDataCB = pfnCB;
   initIntPin();
+  IIC_Enable(I2C_ADDR, i2cClock_267KHZ);
+}
+
+extern void MAX30102_Setup(uint8 mode, uint16 sampleRate)
+{
+  softReset(); //Reset all configuration, threshold, and data registers to POR values
+  
+  if(mode == HR_MODE) {
+    setLEDMode(MAX30102_MODE_REDONLY); //Red only
+    activeLED = 1;
+  } else {
+    setLEDMode(MAX30102_MODE_REDIRONLY); //Red and IR
+    activeLED = 2;
+  }
+  
+  setADCRange(MAX30102_ADCRANGE_4096);
+  
+  if (sampleRate < 100) setSampleRate(MAX30102_SAMPLERATE_50); //Take 50 samples per second
+  else if (sampleRate < 200) setSampleRate(MAX30102_SAMPLERATE_100);
+  else if (sampleRate < 400) setSampleRate(MAX30102_SAMPLERATE_200);
+  else if (sampleRate < 800) setSampleRate(MAX30102_SAMPLERATE_400);
+  else if (sampleRate < 1000) setSampleRate(MAX30102_SAMPLERATE_800);
+  else if (sampleRate < 1600) setSampleRate(MAX30102_SAMPLERATE_1000);
+  else if (sampleRate < 3200) setSampleRate(MAX30102_SAMPLERATE_1600);
+  else if (sampleRate == 3200) setSampleRate(MAX30102_SAMPLERATE_3200);
+  else setSampleRate(MAX30102_SAMPLERATE_50);
+  
+  setPulseWidth(MAX30102_PULSEWIDTH_118); //16 bit resolution
+  
+  setPulseAmplitudeRed(0x0F); // 3.0mA
+  setPulseAmplitudeIR(0x0F);
+  
+    
+  clearFIFO(); //Reset the FIFO before we begin checking the sensor
+  red = 0;
+  ir = 0;
 }
 
 //启动：设置Slave Address和SCLK频率
 extern void MAX30102_Start()
 {
-  IIC_Enable(I2C_ADDR, i2cClock_267KHZ);
+  wakeUp();
+  enableDATARDY();
 }
 
 //停止MAX30102
 extern void MAX30102_Stop()
 {
-  IIC_Disable();
+  disableDATARDY();
+  shutDown();
+  clearFIFO();
+  red = 0;
+  ir = 0;
 }
 
+// Die Temperature
+// Returns temp in C
+extern float MAX30102_ReadTemperature() {
+  // Step 1: Config die temperature register to take 1 temperature sample
+  writeOneByte(MAX30102_DIETEMPCONFIG, 0x01);
 
+  // Poll for bit to clear, reading is then complete
+  while (true)
+  {
+    uint8 response = readOneByte(MAX30102_DIETEMPCONFIG);
+    if ((response & 0x01) == 0) break; //We're done!
+    delayus(1000); //Let's not over burden the I2C bus
+  }
+
+  // Step 2: Read die temperature register (integer)
+  int8 tempInt = readOneByte(MAX30102_DIETEMPINT);
+  uint8 tempFrac = readOneByte(MAX30102_DIETEMPFRAC);
+
+  // Step 3: Calculate temperature (datasheet pg. 23)
+  return (float)tempInt + ((float)tempFrac * 0.0625);
+}
 
 /*
 * 局部函数
@@ -211,7 +287,7 @@ static void disableDIETEMPRDY(void) {
 //End Interrupt configuration
 
 
-static void softReset(void) {
+static void softReset() {
   bitMask(MAX30102_MODECONFIG, MAX30102_RESET_MASK, MAX30102_RESET);
 
   while (true)
@@ -371,13 +447,38 @@ __interrupt void PORT0_ISR(void)
   
   P0IFG &= 0xFD; //~(1<<1);   //clear P0_1 IFG 
   P0IF = 0;      //clear P0 interrupt flag
-
-  readOneSampleData();
+  
+  uint8 intStatus1 = getINT1();
+  
+  // data ready
+  if(intStatus1 & 0x40 != 0) {
+    uint8 ptRead = getReadPointer();
+    uint8 ptWrite = getWritePointer();
+    if(ptRead != ptWrite)
+      readOneSampleData();
+  }
   
   HAL_EXIT_ISR();   // Re-enable interrupts.  
 }
 
+// 读取最新的一个sample，可能包括RED/IR LED通道数据，由activeLED表示通道数
+// 每个通道的分辨率为16bits，所以每个通道数据都转化为uint16类型
 static void readOneSampleData()
 {
-  pfnMAXDataCB(100, 120);
+  // 将read pointer指向write pointer后一个，即只读取最新的一个样本数据
+  //uint8 ptWrite = readOneByte(MAX30102_FIFOWRITEPTR);
+  //ptWrite = (ptWrite == 0) ? 31 : ptWrite-1;
+  //writeOneByte(MAX30102_FIFOREADPTR, ptWrite);
+  
+  uint8 buff[6] = {0};
+  readMultipleBytes(MAX30102_FIFODATA, activeLED*3, buff);
+  uint32 num32 = BUILD_UINT32(buff[2], buff[1], buff[0], 0x00);
+  red = (uint16)(num32>>2);
+  ir = 0;
+  if(activeLED > 1) {
+    num32 = BUILD_UINT32(buff[5], buff[4], buff[3], 0x00);
+    ir = (uint16)(num32>>2);
+  }
+  if(pfnMAXDataCB != NULL)
+    pfnMAXDataCB(red, ir, activeLED);
 }

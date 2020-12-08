@@ -189,7 +189,7 @@ extern void PPG_Init( uint8 task_id )
   //第三：对于会用到的IO，就要根据具体外部电路连接情况进行有效设置，防止耗电
   initIOPin();
   
-  PPGFunc_Init(taskID);
+  PPGFunc_Init(taskID, ppgSampleRate);
   
   HCI_EXT_ClkDivOnHaltCmd( HCI_EXT_ENABLE_CLK_DIVIDE_ON_HALT );  
 
@@ -245,6 +245,8 @@ extern uint16 PPG_ProcessEvent( uint8 task_id, uint16 events )
 
     // Start Bond Manager
     VOID GAPBondMgr_Register( &bondCBs );
+    
+    startPpgSampling();
 
     return ( events ^ PPG_START_DEVICE_EVT );
   }
