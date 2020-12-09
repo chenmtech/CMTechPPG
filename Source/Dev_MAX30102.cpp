@@ -166,17 +166,22 @@ static void readOneSampleData();
 extern void MAX30102_Init(MAX30102_DataCB_t pfnCB)
 {
   pfnMAXDataCB = pfnCB;
-  //setINTPin();
+  
+  IIC_Enable(I2C_ADDR, i2cClock_267KHZ);
   delayus(2000);
-  IIC_Enable(I2C_ADDR, i2cClock_123KHZ);
+  
+  setINTPin();
   delayus(2000);
-  // Step 1: Initial Communication and Verification
-  // Check that a MAX30105 is connected
+  
   readPartID();
+  delayus(2000);
 }
 
 extern void MAX30102_Setup(uint8 mode, uint16 sampleRate)
 {
+  IIC_Enable(I2C_ADDR, i2cClock_267KHZ);
+  delayus(2000);
+  
   softReset(); //Reset all configuration, threshold, and data registers to POR values
   
   if(mode == HR_MODE) {
@@ -213,18 +218,25 @@ extern void MAX30102_Setup(uint8 mode, uint16 sampleRate)
 //启动：设置Slave Address和SCLK频率
 extern void MAX30102_WakeUp()
 {
-  setINTPin();
+  IIC_Enable(I2C_ADDR, i2cClock_267KHZ);
   delayus(2000);
   wakeUp();
+  delayus(2000);
   enableDATARDY();
+  delayus(2000);
 }
 
 //停止MAX30102
 extern void MAX30102_Shutdown()
 {
+  IIC_Enable(I2C_ADDR, i2cClock_267KHZ);
+  delayus(2000);
   disableDATARDY();
-  shutDown();
+  delayus(2000);
   clearFIFO();
+  delayus(2000);
+  shutDown();
+  delayus(2000);
   red = 0;
   ir = 0;
 }
@@ -451,27 +463,35 @@ static void setINTPin()
   P0IE = 1;           // P0 interrupt enable  
 }
 
-uint8 intStatus1;
-uint8 ptRead = 0;
-uint8 ptWrite = 0;
 #pragma vector = P0INT_VECTOR
 __interrupt void PORT0_ISR(void)
 { 
   HAL_ENTER_ISR();  // Hold off interrupts.
   
+  IIC_Enable(I2C_ADDR, i2cClock_267KHZ);
+  uint8 intStatus1 = getINT1();
+  
+  // data ready
+  if((intStatus1 & 0x40) != 0) {
+    uint8 ptRead = getReadPointer();
+    uint8 ptWrite = getWritePointer();
+    if(ptRead != ptWrite) {
+      int8 num = ptWrite-ptRead;
+      if(num < 0) num += 32;
+      if(num > 1){
+        uint8 buff[6] = {0};
+        readMultipleBytes(MAX30102_FIFODATA, activeLED*3, buff);
+      }
+      readOneSampleData();
+    }
+    
+    //if(ptRead != ptWrite)
+    //  readOneSampleData();
+  }
   
   P0IFG &= 0xFD; //~(1<<1);   //clear P0_1 IFG 
   P0IF = 0;      //clear P0 interrupt flag
   
-  intStatus1 = getINT1();
-  
-  // data ready
-  if((intStatus1 & 0x40) != 0) {
-    ptRead = getReadPointer();
-    ptWrite = getWritePointer();
-    if(ptRead != ptWrite)
-      readOneSampleData();
-  }
   HAL_EXIT_ISR();   // Re-enable interrupts.  
 }
 

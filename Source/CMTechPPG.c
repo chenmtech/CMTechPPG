@@ -248,7 +248,7 @@ extern uint16 PPG_ProcessEvent( uint8 task_id, uint16 events )
     VOID GAPBondMgr_Register( &bondCBs );
     
   
-    startPpgSampling();
+    //startPpgSampling();
 
     return ( events ^ PPG_START_DEVICE_EVT );
   }
