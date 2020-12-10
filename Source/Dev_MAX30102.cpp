@@ -135,9 +135,6 @@ static uint8 activeLED = 1; // 激活的LED数，HR模式只有1个RED LED激活，SPO2模式有
 
 
 static MAX30102_DataCB_t pfnMAXDataCB; // callback function processing data 
-static uint16 red = 0;
-
-static uint16 ir = 0;
 
 
 static void setINTPin();
@@ -212,14 +209,11 @@ extern void MAX30102_Setup(uint8 mode, uint16 sampleRate)
   
   setPulseWidth(MAX30102_PULSEWIDTH_215); //17 bit resolution
   
-  setPulseAmplitudeRed(0x1F); // 0x0F : 3.0mA, 0x1F: 6.2mA
-  setPulseAmplitudeIR(0x1F);
+  setPulseAmplitudeRed(0x0F); // 0x0F : 3.0mA, 0x1F: 6.2mA
+  setPulseAmplitudeIR(0x0F);
   
     
   clearFIFO(); //Reset the FIFO before we begin checking the sensor
-  red = 0;
-  
-  ir = 0;
 }
 
 //启动：设置Slave Address和SCLK频率
@@ -244,9 +238,6 @@ extern void MAX30102_Shutdown()
   delayus(2000);
   shutDown();
   delayus(2000);
-  red = 0;
-  
-  ir = 0;
 }
 
 // Die Temperature
@@ -456,18 +447,18 @@ static void setINTPin()
 {
   //P0.2 INT管脚配置  
   //先关P0.2 INT中断
-  P0IEN &= ~(1<<1);
-  P0IFG &= ~(1<<1);   // clear P0_2 interrupt status flag
+  P0IEN &= ~(1<<2);
+  P0IFG &= ~(1<<2);   // clear P0_2 interrupt status flag
   P0IF = 0;           //clear P0 interrupt flag  
   
   //配置P0.2 INT 中断
-  P0SEL &= ~(1<<1); //GPIO
-  P0DIR &= ~(1<<1); //Input
+  P0SEL &= ~(1<<2); //GPIO
+  P0DIR &= ~(1<<2); //Input
   PICTL |= (1<<0);  //所有P0管脚都是下降沿触发
   //////////////////////////
   
   //开P0.2 INT中断
-  P0IEN |= (1<<1);    // P0_2 interrupt enable
+  P0IEN |= (1<<2);    // P0_2 interrupt enable
   P0IE = 1;           // P0 interrupt enable  
 }
 
@@ -477,7 +468,7 @@ __interrupt void PORT0_ISR(void)
   HAL_ENTER_ISR();  // Hold off interrupts.
   
   // P0_2中断
-  //if((P0IFG & 0x04) != 0) { 
+  if((P0IFG & 0x04) != 0) { 
   
     IIC_Enable(I2C_ADDR, i2cClock_267KHZ);
     uint8 intStatus1 = getINT1();
@@ -497,8 +488,8 @@ __interrupt void PORT0_ISR(void)
       }
     }
     
-    P0IFG &= ~(1<<1);   // clear P0_2 interrupt status flag
-  //}
+    P0IFG &= ~(1<<2);   // clear P0_2 interrupt status flag
+  }
   
   P0IF = 0;           //clear P0 interrupt flag
   
@@ -517,8 +508,8 @@ static void readOneSampleData()
   uint8 buff[6] = {0};
   readMultipleBytes(MAX30102_FIFODATA, activeLED*3, buff);
   uint32 num32 = BUILD_UINT32(buff[2], buff[1], buff[0], 0x00);
-  red = (uint16)(num32>>2);
-  ir = 0;
+  uint16 red = (uint16)(num32>>2);
+  uint16 ir = 0;
   if(activeLED > 1) {
     num32 = BUILD_UINT32(buff[5], buff[4], buff[3], 0x00);
     ir = (uint16)(num32>>2);
