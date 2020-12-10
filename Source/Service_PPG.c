@@ -46,7 +46,7 @@ static gattCharCfg_t ppgPackClientCharCfg[GATT_MAX_NUM_CONN];
 
 // Sample Rate Characteristic
 static uint8 ppgSampleRateProps = GATT_PROP_READ;
-static uint16 ppgSampleRate = 100;
+static uint16 ppgSampleRate = 125;
 
 
 /*********************************************************************

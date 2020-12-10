@@ -59,7 +59,7 @@ static uint16 gapConnHandle = INVALID_CONNHANDLE;
 static gaprole_States_t gapProfileState = GAPROLE_INIT;
 static uint8 attDeviceName[GAP_DEVICE_NAME_LEN] = "KM PPG"; // GGS device name
 static uint8 status = STATUS_PPG_STOP; // PPG sampling status
-static uint16 ppgSampleRate = 50;
+static uint16 ppgSampleRate = 125; // PPG real sample rate
 
 // advertise data
 static uint8 advertData[] = 
@@ -190,7 +190,7 @@ extern void PPG_Init( uint8 task_id )
   //第三：对于会用到的IO，就要根据具体外部电路连接情况进行有效设置，防止耗电
   initIOPin();
   
-  PPGFunc_Init(taskID, ppgSampleRate);
+  PPGFunc_Init(taskID, 1000); // max30102 sample rate = 1kHz
   
   HCI_EXT_ClkDivOnHaltCmd( HCI_EXT_ENABLE_CLK_DIVIDE_ON_HALT );  
 

@@ -133,9 +133,12 @@ static const uint8 SLOT_GREEN_PILOT = 		0x07;
 static uint8 activeLED = 1; // 激活的LED数，HR模式只有1个RED LED激活，SPO2模式有2个LED激活。用在读取sample中计算需要读取的byte数
 
 
+
 static MAX30102_DataCB_t pfnMAXDataCB; // callback function processing data 
 static uint16 red = 0;
+
 static uint16 ir = 0;
+
 
 static void setINTPin();
 static void writeOneByte(uint8 reg, uint8 data);
@@ -151,6 +154,7 @@ static void shutDown(void);
 static void wakeUp(void);
 static void enableDATARDY(void);
 static void disableDATARDY(void);
+static void setFIFOAverage(uint8 numberOfSamples);
 static void setADCRange(uint8 adcRange);
 static void setSampleRate(uint8 sampleRate);
 static void setPulseWidth(uint8 pulseWidth);
@@ -192,6 +196,8 @@ extern void MAX30102_Setup(uint8 mode, uint16 sampleRate)
     activeLED = 2;
   }
   
+  setFIFOAverage(MAX30102_SAMPLEAVG_8);
+  
   setADCRange(MAX30102_ADCRANGE_4096);
   
   if (sampleRate < 100) setSampleRate(MAX30102_SAMPLERATE_50); //Take 50 samples per second
@@ -204,14 +210,15 @@ extern void MAX30102_Setup(uint8 mode, uint16 sampleRate)
   else if (sampleRate == 3200) setSampleRate(MAX30102_SAMPLERATE_3200);
   else setSampleRate(MAX30102_SAMPLERATE_50);
   
-  setPulseWidth(MAX30102_PULSEWIDTH_118); //16 bit resolution
+  setPulseWidth(MAX30102_PULSEWIDTH_215); //17 bit resolution
   
-  setPulseAmplitudeRed(0x0F); // 3.0mA
-  setPulseAmplitudeIR(0x0F);
+  setPulseAmplitudeRed(0x1F); // 0x0F : 3.0mA, 0x1F: 6.2mA
+  setPulseAmplitudeIR(0x1F);
   
     
   clearFIFO(); //Reset the FIFO before we begin checking the sensor
   red = 0;
+  
   ir = 0;
 }
 
@@ -238,6 +245,7 @@ extern void MAX30102_Shutdown()
   shutDown();
   delayus(2000);
   red = 0;
+  
   ir = 0;
 }
 
@@ -446,20 +454,20 @@ static void readMultipleBytes(uint8 reg, uint8 len, uint8* pBuff)
 // 设置INT中断
 static void setINTPin()
 {
-  //P0.1 INT管脚配置  
-  //先关P0.1即INT中断
+  //P0.2 INT管脚配置  
+  //先关P0.2 INT中断
   P0IEN &= ~(1<<1);
-  P0IFG &= ~(1<<1);   // clear P0_1 interrupt status flag
+  P0IFG &= ~(1<<1);   // clear P0_2 interrupt status flag
   P0IF = 0;           //clear P0 interrupt flag  
   
-  //配置P0.1即INT 中断
+  //配置P0.2 INT 中断
   P0SEL &= ~(1<<1); //GPIO
   P0DIR &= ~(1<<1); //Input
-  PICTL |= (1<<0);  //下降沿触发
+  PICTL |= (1<<0);  //所有P0管脚都是下降沿触发
   //////////////////////////
   
-  //开P0.1 INT中断
-  P0IEN |= (1<<1);    // P0_1 interrupt enable
+  //开P0.2 INT中断
+  P0IEN |= (1<<1);    // P0_2 interrupt enable
   P0IE = 1;           // P0 interrupt enable  
 }
 
@@ -468,35 +476,37 @@ __interrupt void PORT0_ISR(void)
 { 
   HAL_ENTER_ISR();  // Hold off interrupts.
   
-  IIC_Enable(I2C_ADDR, i2cClock_267KHZ);
-  uint8 intStatus1 = getINT1();
+  // P0_2中断
+  //if((P0IFG & 0x04) != 0) { 
   
-  // data ready
-  if((intStatus1 & 0x40) != 0) {
-    uint8 ptRead = getReadPointer();
-    uint8 ptWrite = getWritePointer();
-    if(ptRead != ptWrite) {
-      int8 num = ptWrite-ptRead;
-      if(num < 0) num += 32;
-      if(num > 1){
-        uint8 buff[6] = {0};
-        readMultipleBytes(MAX30102_FIFODATA, activeLED*3, buff);
+    IIC_Enable(I2C_ADDR, i2cClock_267KHZ);
+    uint8 intStatus1 = getINT1();
+    
+    // data ready interrupt
+    if((intStatus1 & 0x40) != 0) {
+      uint8 ptRead = getReadPointer();
+      uint8 ptWrite = getWritePointer();
+      if(ptRead != ptWrite) {
+        int8 num = ptWrite-ptRead;
+        if(num < 0) num += 32;
+        if(num > 1){
+          uint8 buff[6] = {0};
+          readMultipleBytes(MAX30102_FIFODATA, activeLED*3, buff);
+        }
+        readOneSampleData();
       }
-      readOneSampleData();
     }
     
-    //if(ptRead != ptWrite)
-    //  readOneSampleData();
-  }
+    P0IFG &= ~(1<<1);   // clear P0_2 interrupt status flag
+  //}
   
-  P0IFG &= 0xFD; //~(1<<1);   //clear P0_1 IFG 
-  P0IF = 0;      //clear P0 interrupt flag
+  P0IF = 0;           //clear P0 interrupt flag
   
   HAL_EXIT_ISR();   // Re-enable interrupts.  
 }
 
 // 读取最新的一个sample，可能包括RED/IR LED通道数据，由activeLED表示通道数
-// 每个通道的分辨率为16bits，所以每个通道数据都转化为uint16类型
+// 每个通道数据都转化为uint16类型
 static void readOneSampleData()
 {
   // 将read pointer指向write pointer后一个，即只读取最新的一个样本数据
