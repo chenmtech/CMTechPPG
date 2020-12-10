@@ -209,8 +209,8 @@ extern void MAX30102_Setup(uint8 mode, uint16 sampleRate)
   
   setPulseWidth(MAX30102_PULSEWIDTH_215); //17 bit resolution
   
-  setPulseAmplitudeRed(0x0F); // 0x0F : 3.0mA, 0x1F: 6.2mA
-  setPulseAmplitudeIR(0x0F);
+  setPulseAmplitudeRed(0x1F); // 0x0F : 3.0mA, 0x1F: 6.2mA
+  setPulseAmplitudeIR(0x1F);
   
     
   clearFIFO(); //Reset the FIFO before we begin checking the sensor
