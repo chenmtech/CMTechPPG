@@ -207,7 +207,7 @@ extern void MAX30102_Setup()
   // 设置LED脉冲宽度，改变ADC输出有效位数
   setPulseWidth(MAX30102_PULSEWIDTH_16);
   
-  // 设置ADC光电流的量程范围
+  // 设置ADC光电流的量程范围, 单位nA
   setADCRange(MAX30102_ADCRANGE_2048);
   
   // 设置LED脉冲幅度，数值乘以0.2就是供电电流值mA
