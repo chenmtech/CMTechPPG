@@ -204,15 +204,15 @@ extern void MAX30102_Setup()
   // 设置样本平均个数为8，所以实际数据率为125Hz
   setFIFOAverage(MAX30102_SAMPLEAVG_8);
   
-  // 设置LED脉冲宽度，使得ADC输出有效位数为18位
-  setPulseWidth(MAX30102_PULSEWIDTH_18);
+  // 设置LED脉冲宽度，改变ADC输出有效位数
+  setPulseWidth(MAX30102_PULSEWIDTH_16);
   
-  // 设置ADC量程范围为4.096uA
-  setADCRange(MAX30102_ADCRANGE_4096);
+  // 设置ADC光电流的量程范围
+  setADCRange(MAX30102_ADCRANGE_2048);
   
-  // 设置LED脉冲幅度
-  setPulseAmplitudeRed(0x1F); // 0x0F : 3.0mA, 0x1F: 6.2mA
-  setPulseAmplitudeIR(0x1F);
+  // 设置LED脉冲幅度，数值乘以0.2就是供电电流值mA
+  setPulseAmplitudeRed(0x0A); 
+  setPulseAmplitudeIR(0x0A);
   
   // 重置FIFO  
   clearFIFO();
@@ -531,11 +531,8 @@ static uint16 readOneSampleData()
 {
   uint8 buff[3] = {0};
   readMultipleBytes(MAX30102_FIFODATA, 3, buff);
-  //uint32 num32 = BUILD_UINT32(buff[2], buff[1], buff[0], 0x00);
-  //uint16 red = (uint16)(num32);
   
-  // 读出的数据按照位数从高到低排列，应该为buff[0] | buff[1] | buff[2]
-  // 这里把高位的buff[0]丢弃，为什么呢？
-  uint16 data = BUILD_UINT16(buff[2], buff[1]);
+  uint32 data32 = BUILD_UINT32(buff[2], buff[1], buff[0], 0x00);
+  uint16 data = (uint16)(data32>>2);
   return data;
 }
