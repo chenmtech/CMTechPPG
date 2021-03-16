@@ -3,6 +3,7 @@
  * Written by Chenm
  */
 
+#include "hal_mcu.h"
 #include "App_PPGFunc.h"
 #include "CMUtil.h"
 #include "service_PPG.h"
@@ -18,21 +19,24 @@ static uint8 taskId; // taskId of application
 static uint8 pckNum = 0;
 // ppg packet buffer
 static uint8 ppgBuff[PPG_PACK_BYTE_NUM] = {0};
-// pointer to the current position of the ppg buff
+// pointer to the current position in ppgBuff
 static uint8* pPpgBuff;
 // ppg packet structure sent out
 static attHandleValueNoti_t ppgNoti;
 
-// the callback function to process the PPG data from MAX30102
-static void processPpgSignal(uint16 red, uint16 ir, uint8 activeLED);
+// the callback function to process the PPG data read from MAX30102
+static void processPpgSignal(uint16 data);
 
-extern void PPGFunc_Init(uint8 taskID, uint16 sampleRate)
+// 初始化
+extern void PPGFunc_Init(uint8 taskID)
 { 
   taskId = taskID;
   
-  // initilize the MAX30102 and set the data process callback function
-  MAX30102_Init(processPpgSignal);
-  MAX30102_Setup(HR_MODE, sampleRate);
+  // 配置MAX30102
+  MAX30102_Setup();
+  delayus(1000);
+  MAX30102_Stop();
+  delayus(1000);
   MAX30102_Shutdown();
   delayus(1000);
 }
@@ -46,11 +50,13 @@ extern void PPGFunc_SetPpgSampling(bool start)
   {
     MAX30102_WakeUp();
     delayus(1000);
+    MAX30102_Start();
   } 
   else
   {
+    MAX30102_Stop();
+    delayus(1000);
     MAX30102_Shutdown();
-    delayus(2000);
   }
 }
 
@@ -59,15 +65,35 @@ extern void PPGFunc_SendPpgPacket(uint16 connHandle)
   PPG_PacketNotify( connHandle, &ppgNoti );
 }
 
-static void processPpgSignal(uint16 red, uint16 ir, uint8 activeLED)
+#pragma vector = P0INT_VECTOR
+__interrupt void PORT0_ISR(void)
+{ 
+  HAL_ENTER_ISR();  // Hold off interrupts.
+
+  // P0_2中断, 即MAX30102数据中断  
+  if(P0IFG & 0x04)
+  {
+    uint16 ppg = 0;
+    MAX30102_ReadPpgSample(&ppg);
+    P0IFG &= ~(1<<2);   // clear P0_2 interrupt status flag
+    
+    processPpgSignal(ppg);
+  }
+  
+  P0IF = 0;           //clear P0 interrupt flag
+  
+  HAL_EXIT_ISR();   // Re-enable interrupts.  
+}
+
+static void processPpgSignal(uint16 data)
 {
   if(pPpgBuff == ppgBuff)
   {
     *pPpgBuff++ = pckNum;
     pckNum = (pckNum == PPG_MAX_PACK_NUM) ? 0 : pckNum+1;
   }
-  *pPpgBuff++ = LO_UINT16(red);  
-  *pPpgBuff++ = HI_UINT16(red);
+  *pPpgBuff++ = LO_UINT16(data);  
+  *pPpgBuff++ = HI_UINT16(data);
   
   if(pPpgBuff-ppgBuff >= PPG_PACK_BYTE_NUM)
   {

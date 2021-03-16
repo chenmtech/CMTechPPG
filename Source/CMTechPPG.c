@@ -184,13 +184,11 @@ extern void PPG_Init( uint8 task_id )
     PPG_SetParameter( PPG_SAMPLE_RATE, sizeof ( uint16 ), &ppgSampleRate ); 
   }
   
-  //在这里初始化GPIO
-  //第一：所有管脚，reset后的状态都是输入加上拉
-  //第二：对于不用的IO，建议不连接到外部电路，且设为输入上拉
-  //第三：对于会用到的IO，就要根据具体外部电路连接情况进行有效设置，防止耗电
+  // 初始化IO管脚
   initIOPin();
   
-  PPGFunc_Init(taskID, 1000); // max30102 sample rate = 1kHz
+  // PPG应用初始化
+  PPGFunc_Init(taskID);
   
   HCI_EXT_ClkDivOnHaltCmd( HCI_EXT_ENABLE_CLK_DIVIDE_ON_HALT );  
 
@@ -217,6 +215,20 @@ static void initIOPin()
   
   IIC_SetAsGPIO();
   
+  // 关P0.2中断
+  P0IEN &= ~(1<<2); 
+  P0IFG &= ~(1<<2); // clear P0_2 interrupt status flag
+  P0IF = 0;         // clear P0 interrupt flag  
+  
+  //P0.2 INT管脚配置  
+  P0SEL &= ~(1<<2); // GPIO
+  P0DIR &= ~(1<<2); // 输入
+  PICTL |= (1<<0);  // 所有P0管脚都是下降沿触发
+  //////////////////////////
+  
+  //开P0.2 INT中断
+  P0IEN |= (1<<2);    // P0.2中断enable
+  P0IE = 1;           // P0中断enable  
 }
 
 extern uint16 PPG_ProcessEvent( uint8 task_id, uint16 events )
@@ -290,8 +302,6 @@ static void gapStateCB( gaprole_States_t newState )
             newState != GAPROLE_CONNECTED)
   {
     stopPpgSampling();
-    //initIOPin();
-    //ADS1x9x_PowerDown();
   }
   // if started
   else if (newState == GAPROLE_STARTED)
