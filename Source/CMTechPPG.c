@@ -112,6 +112,7 @@ static PPGServiceCBs_t ppgServCBs =
 
 static void processOSALMsg( osal_event_hdr_t *pMsg ); // OSAL message process function
 static void initIOPin(); // initialize IO pins
+static void initInterrupt(); // initialize interrupt
 static void startPpgSampling( void ); // start PPG sampling
 static void stopPpgSampling( void ); // stop PPG sampling
 
@@ -177,7 +178,6 @@ extern void PPG_Init( uint8 task_id )
   DevInfo_AddService( ); // device information service
   
   PPG_AddService(GATT_ALL_SERVICES); // ppg service
-  PPG_RegisterAppCBs( &ppgServCBs );  
   
   // set sample rate in ppg service
   {
@@ -188,7 +188,12 @@ extern void PPG_Init( uint8 task_id )
   initIOPin();
   
   // PPG应用初始化
-  PPGFunc_Init(taskID);
+  PPGFunc_Init(taskID);  
+  
+  // 初始化中断
+  initInterrupt();
+  
+  PPG_RegisterAppCBs( &ppgServCBs );  
   
   HCI_EXT_ClkDivOnHaltCmd( HCI_EXT_ENABLE_CLK_DIVIDE_ON_HALT );  
 
@@ -198,7 +203,7 @@ extern void PPG_Init( uint8 task_id )
 
 // 初始化IO管脚
 static void initIOPin()
-{
+{  
   // 全部设为GPIO
   P0SEL = 0; 
   P1SEL = 0; 
@@ -212,9 +217,10 @@ static void initIOPin()
   P0 = 0; 
   P1 = 0;   
   P2 = 0; 
-  
-  IIC_SetAsGPIO();
-  
+}
+
+static void initInterrupt()
+{
   // 关P0.2中断
   P0IEN &= ~(1<<2); 
   P0IFG &= ~(1<<2); // clear P0_2 interrupt status flag
@@ -228,7 +234,7 @@ static void initIOPin()
   
   //开P0.2 INT中断
   P0IEN |= (1<<2);    // P0.2中断enable
-  P0IE = 1;           // P0中断enable  
+  P0IE = 1;           // P0中断enable    
 }
 
 extern uint16 PPG_ProcessEvent( uint8 task_id, uint16 events )
@@ -258,9 +264,6 @@ extern uint16 PPG_ProcessEvent( uint8 task_id, uint16 events )
 
     // Start Bond Manager
     VOID GAPBondMgr_Register( &bondCBs );
-    
-  
-    //startPpgSampling();
 
     return ( events ^ PPG_START_DEVICE_EVT );
   }

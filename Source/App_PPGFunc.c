@@ -15,12 +15,15 @@
 
 static uint8 taskId; // taskId of application
 
-// the number of the current ppg data packet, from 0 to PPG_MAX_PACK_NUM
+// the byte number of the current ppg data packet, from 0 to PPG_MAX_PACK_NUM
 static uint8 pckNum = 0;
+
 // ppg packet buffer
 static uint8 ppgBuff[PPG_PACK_BYTE_NUM] = {0};
+
 // pointer to the current position in ppgBuff
 static uint8* pPpgBuff;
+
 // ppg packet structure sent out
 static attHandleValueNoti_t ppgNoti;
 
@@ -31,14 +34,12 @@ static void processPpgSignal(uint16 data);
 extern void PPGFunc_Init(uint8 taskID)
 { 
   taskId = taskID;
-  
+  // 判断芯片是否上电
+  while(!MAX30102_IsPowerOn());
   // 配置MAX30102
   MAX30102_Setup();
-  delayus(1000);
-  MAX30102_Stop();
-  delayus(1000);
+  // 进入低功耗模式
   MAX30102_Shutdown();
-  delayus(1000);
 }
 
 extern void PPGFunc_SetPpgSampling(bool start)
@@ -46,17 +47,15 @@ extern void PPGFunc_SetPpgSampling(bool start)
   pckNum = 0;
   pPpgBuff = ppgBuff;
   osal_clear_event(taskId, PPG_PACKET_NOTI_EVT);
-  if(start)
+  if(start) // 开始采样
   {
-    MAX30102_WakeUp();
-    delayus(1000);
-    MAX30102_Start();
+    MAX30102_WakeUp(); // 唤醒
+    MAX30102_Start(); // 开始
   } 
   else
   {
-    MAX30102_Stop();
-    delayus(1000);
-    MAX30102_Shutdown();
+    MAX30102_Stop(); // 停止
+    MAX30102_Shutdown(); // 进入低功耗模式
   }
 }
 
@@ -70,14 +69,16 @@ __interrupt void PORT0_ISR(void)
 { 
   HAL_ENTER_ISR();  // Hold off interrupts.
 
-  // P0_2中断, 即MAX30102数据中断  
+  // P0_2中断 
   if(P0IFG & 0x04)
   {
-    uint16 ppg = 0;
-    MAX30102_ReadPpgSample(&ppg);
     P0IFG &= ~(1<<2);   // clear P0_2 interrupt status flag
-    
-    processPpgSignal(ppg);
+    //if(MAX30102_IsDATARDY()) // MAX30102数据中断 
+    //{
+      uint16 ppg = 0;
+      if(MAX30102_ReadPpgSample(&ppg))
+        processPpgSignal(ppg);
+    //}
   }
   
   P0IF = 0;           //clear P0 interrupt flag
